@@ -10,11 +10,11 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
     uint256 private _tokenIdCounter;
     uint256 private _lastTimestamp;
     uint256 private _perSecondCounter;
-    
+
     address public platformAddress;
     IERC20 public paymentToken;
     uint256 public mintTimeout = 5 minutes;
-    
+
     mapping(uint256 => mapping(address => uint256)) public mintedPerUser;
 
     /*
@@ -34,13 +34,13 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         uint256 price;
         bool isFinal;
     }*/
-    
+
     struct LocalizedText {
-        string zh; 
-        string en; 
-        string jp; 
+        string zh;
+        string en;
+        string jp;
     }
-    
+
     struct MangaChapter {
         LocalizedText mangaTitle;
         LocalizedText description;
@@ -61,16 +61,12 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
 
     mapping(uint256 => MangaChapter) public mangaChapters;
     mapping(address => PendingPayment[]) public payments;
-    
+
     //event ChapterCreated(uint256 indexed tokenId, address indexed creator, string mangaTitle);
     event ChapterCreated(
-        uint256 indexed tokenId,
-        address indexed creator,
-        string mangaTitleZh,
-        string mangaTitleEn,
-        string mangaTitleJp
+        uint256 indexed tokenId, address indexed creator, string mangaTitleZh, string mangaTitleEn, string mangaTitleJp
     );
-        
+
     event PaymentReceived(address indexed buyer, uint256 indexed tokenId, uint256 amount);
     event ChapterMinted(uint256 indexed tokenId, address indexed to, uint256 mintTime);
     event RefundIssued(address indexed buyer, uint256 indexed tokenId, uint256 amount);
@@ -86,13 +82,13 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
     event PaymentTokenUpdated(address indexed oldToken, address indexed newToken);
 
     event BatchFreeMinted(
-    address[] successfulRecipients,
-    uint256[] successfulTokenIds,
-    address[] failedRecipients,
-    uint256[] failedTokenIds,
-    string[] reasons
+        address[] successfulRecipients,
+        uint256[] successfulTokenIds,
+        address[] failedRecipients,
+        uint256[] failedTokenIds,
+        string[] reasons
     );
-    
+
     modifier onlyPlatform() {
         require(msg.sender == platformAddress, "Only platform can mint");
         _;
@@ -107,7 +103,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         platformAddress = _platformAddress;
         paymentToken = IERC20(_paymentToken);
     }
-    
+
     function generateTokenId() internal returns (uint256) {
         uint256 currentTimestamp = block.timestamp;
 
@@ -117,10 +113,10 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         }
 
         _perSecondCounter++;
-        
+
         // 拼接 tokenId: timestamp * 1e6 + counter (最多6位)
         uint256 tokenId = currentTimestamp * 1e6 + _perSecondCounter;
-        
+
         return tokenId;
     }
 
@@ -138,37 +134,22 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
 
         require(maxCopies > 0 && maxCopies % 5 == 0, "maxCopies must be multiple of 5");
 
-        LocalizedText memory title = LocalizedText({
-            zh: mangaTitleZh,
-            en: mangaTitleEn,
-            jp: mangaTitleJp
-        });
+        LocalizedText memory title = LocalizedText({zh: mangaTitleZh, en: mangaTitleEn, jp: mangaTitleJp});
 
-        LocalizedText memory desc = LocalizedText({
-            zh: descriptionZh,
-            en: descriptionEn,
-            jp: descriptionJp
-        });
-        
+        LocalizedText memory desc = LocalizedText({zh: descriptionZh, en: descriptionEn, jp: descriptionJp});
+
         mangaChapters[newTokenId] = MangaChapter({
             mangaTitle: title,
             description: desc,
             publishTime: block.timestamp,
-            mintTime:0,
+            mintTime: 0,
             maxCopies: maxCopies,
             creator: msg.sender,
             uri: uri_
         });
 
         //emit ChapterCreated(newTokenId, msg.sender, mangaTitle);
-        emit ChapterCreated(
-            newTokenId,
-            msg.sender,
-            mangaTitleZh,
-            mangaTitleEn,
-            mangaTitleJp
-        );
-                
+        emit ChapterCreated(newTokenId, msg.sender, mangaTitleZh, mangaTitleEn, mangaTitleJp);
 
         uint256 amountToMint = (maxCopies * 4) / 5;
         _mint(msg.sender, newTokenId, amountToMint, "");
@@ -176,30 +157,29 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         mangaChapters[newTokenId].mintTime = block.timestamp;
 
         emit ChapterMinted(newTokenId, msg.sender, block.timestamp);
-            
+
         return newTokenId;
     }
 
     function freeMint(address to, uint256 tokenId) public onlyPlatform {
         require(to != address(0), "Invalid recipient");
-        
+
         MangaChapter storage chapter = mangaChapters[tokenId];
         require(totalSupply(tokenId) < chapter.maxCopies, "No more copies");
-        
+
         /*require(
             mintedPerUser[tokenId][to] < chapter.maxPerUser,
             "Mint limit per user reached"
         );*/
-        
+
         chapter.mintTime = block.timestamp;
         _mint(to, tokenId, 1, "");
-        
-        mintedPerUser[tokenId][to] += 1; 
+
+        mintedPerUser[tokenId][to] += 1;
 
         emit ChapterMinted(tokenId, to, block.timestamp);
     }
-    
-    
+
     function getChapterTitle(uint256 tokenId, string memory lang) external view returns (string memory) {
         LocalizedText memory title = mangaChapters[tokenId].mangaTitle;
         if (keccak256(bytes(lang)) == keccak256("zh")) return title.zh;
@@ -207,12 +187,8 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         if (keccak256(bytes(lang)) == keccak256("jp")) return title.jp;
         return "";
     }
-    
-    function updateMangaTitle(
-        uint256 tokenId,
-        string memory language,
-        string memory newTitle
-    ) external {
+
+    function updateMangaTitle(uint256 tokenId, string memory language, string memory newTitle) external {
         MangaChapter storage chapter = mangaChapters[tokenId];
         require(msg.sender == chapter.creator, "Only creator can update");
 
@@ -225,15 +201,11 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         } else {
             revert("Unsupported language");
         }
-        
+
         emit MangaTitleUpdated(tokenId, language, newTitle);
     }
 
-    function updateChapterDescription(
-        uint256 tokenId,
-        string memory language,
-        string memory newDescription
-    ) external {
+    function updateChapterDescription(uint256 tokenId, string memory language, string memory newDescription) external {
         MangaChapter storage chapter = mangaChapters[tokenId];
         require(msg.sender == chapter.creator, "Only creator can update");
 
@@ -249,7 +221,6 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
 
         emit ChapterDescriptionUpdated(tokenId, language, newDescription);
     }
-        
 
     /*
     function createChapter(
@@ -291,7 +262,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         emit ChapterCreated(newTokenId, msg.sender, mangaTitle);
         return newTokenId;
     }
-   
+    
     function mintChapter(address to, uint256 tokenId, uint256 amountMinted) public onlyPlatform {
         require(to != address(0), "Invalid recipient");
 
@@ -385,15 +356,14 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
             mintedPerUser[tokenId][to] < chapter.maxPerUser,
             "Mint limit per user reached"
         );*/
-        
+
         bool found = false;
         PendingPayment[] storage userPayments = payments[to];
 
-        for (uint i = 0; i < userPayments.length; i++) {
+        for (uint256 i = 0; i < userPayments.length; i++) {
             if (
-                userPayments[i].tokenId == tokenId &&
-                !userPayments[i].minted &&
-                block.timestamp <= userPayments[i].timestamp + mintTimeout
+                userPayments[i].tokenId == tokenId && !userPayments[i].minted
+                    && block.timestamp <= userPayments[i].timestamp + mintTimeout
             ) {
                 userPayments[i].minted = true;
                 found = true;
@@ -408,16 +378,12 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
 
         emit ChapterMinted(tokenId, to, block.timestamp);
     }
-    
+
     function refundIfExpired(address buyer, uint256 tokenId) external {
         PendingPayment[] storage userPayments = payments[buyer];
-        for (uint i = 0; i < userPayments.length; i++) {
+        for (uint256 i = 0; i < userPayments.length; i++) {
             PendingPayment storage p = userPayments[i];
-            if (
-                p.tokenId == tokenId &&
-                !p.minted &&
-                block.timestamp > p.timestamp + mintTimeout
-            ) {
+            if (p.tokenId == tokenId && !p.minted && block.timestamp > p.timestamp + mintTimeout) {
                 uint256 refundAmount = p.amount;
                 p.amount = 0;
                 p.minted = true;
@@ -431,29 +397,27 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
 
     function batchMintChapter(address[] calldata recipients, uint256[] calldata tokenIds) external onlyPlatform {
         require(recipients.length == tokenIds.length, "Array length mismatch");
-        for (uint i = 0; i < recipients.length; i++) {
+        for (uint256 i = 0; i < recipients.length; i++) {
             mintChapter(recipients[i], tokenIds[i]);
         }
         emit BatchMinted(recipients, tokenIds);
     }
-    
-    
+
     function _safeFreeMint(address to, uint256 tokenId) external onlyPlatform {
         require(to != address(0), "Invalid address");
-        
+
         MangaChapter storage chapter = mangaChapters[tokenId];
         require(totalSupply(tokenId) < chapter.maxCopies, "Max supply reached");
-        
+
         // require(mintedPerUser[tokenId][to] < chapter.maxPerUser, "User mint limit exceeded");
 
         _mint(to, tokenId, 1, "");
-        
+
         chapter.mintTime = block.timestamp;
         mintedPerUser[tokenId][to]++;
 
         emit ChapterMinted(tokenId, to, block.timestamp);
     }
-        
 
     function batchFreeMint(address[] calldata recipients, uint256[] calldata tokenIds) external onlyPlatform {
         require(recipients.length == tokenIds.length, "Array length mismatch");
@@ -464,10 +428,10 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         uint256[] memory failedTokenIds = new uint256[](tokenIds.length);
         string[] memory reasons = new string[](recipients.length);
 
-        uint successCount = 0;
-        uint failCount = 0;
+        uint256 successCount = 0;
+        uint256 failCount = 0;
 
-        for (uint i = 0; i < recipients.length; i++) {
+        for (uint256 i = 0; i < recipients.length; i++) {
             try this._safeFreeMint(recipients[i], tokenIds[i]) {
                 successfulRecipients[successCount] = recipients[i];
                 successfulTokenIds[successCount] = tokenIds[i];
@@ -484,7 +448,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
                 failCount++;
             }
         }
-        
+
         assembly {
             mstore(successfulRecipients, successCount)
             mstore(successfulTokenIds, successCount)
@@ -493,19 +457,16 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
             mstore(reasons, failCount)
         }
 
-        emit BatchFreeMinted(
-            successfulRecipients,
-            successfulTokenIds,
-            failedRecipients,
-            failedTokenIds,
-            reasons
-        );
+        emit BatchFreeMinted(successfulRecipients, successfulTokenIds, failedRecipients, failedTokenIds, reasons);
     }
-    
-    function _update(address from, address to, uint256[] memory ids, uint256[] memory values) internal override(ERC1155, ERC1155Supply) {
-        super._update(from, to, ids, values); 
+
+    function _update(address from, address to, uint256[] memory ids, uint256[] memory values)
+        internal
+        override(ERC1155, ERC1155Supply)
+    {
+        super._update(from, to, ids, values);
     }
-    
+
     function getChapterInfo(uint256 tokenId) external view returns (MangaChapter memory) {
         return mangaChapters[tokenId];
     }
@@ -527,7 +488,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         paymentToken = IERC20(newToken);
         emit PaymentTokenUpdated(oldToken, newToken);
     }
-    
+
     /*
     
     function updateIsFinal(uint256 tokenId, bool newIsFinal) external {
