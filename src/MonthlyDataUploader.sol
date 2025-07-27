@@ -3,17 +3,6 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-struct LocalizedText {
-    string zh;
-    string en;
-    string jp;
-}
-
-struct NFTOwner {
-    address owner;
-    uint256 balance;
-}
-
 contract MonthlyDataUploader is Ownable {
     address public platformAddress;
 
@@ -408,68 +397,6 @@ contract MonthlyDataUploader is Ownable {
         platformAddress = newPlatformAddress;
     }
 
-    // Methods that were previously called from MangaNFT contract
-    function getCurrentHeldNFTCountByCreator(address creator) external view returns (uint256) {
-        // This would need to be implemented based on how you want to track creator holdings
-        // For now, returning a placeholder value
-        return creatorTotalAcquired[creator];
-    }
-
-    function getCurrentHeldNFTCountByInvestor(address investor) external view returns (uint256) {
-        // This would need to be implemented based on how you want to track investor holdings
-        // For now, returning a placeholder value
-        return investorTotalAcquired[investor];
-    }
-
-    function getTokenOwners(uint256 tokenId) external view returns (address[] memory) {
-        // This would need to be implemented based on how you want to track token owners
-        // For now, returning empty array
-        return new address[](0);
-    }
-
-    function getNFTOwnersWithBalance(uint256 tokenId) external view returns (NFTOwner[] memory) {
-        // This would need to be implemented based on how you want to track NFT owners with balance
-        // For now, returning empty array
-        return new NFTOwner[](0);
-    }
-
-    function balanceOf(address account, uint256 id) external view returns (uint256) {
-        // This would need to be implemented based on how you want to track balances
-        // For now, returning 0
-        return 0;
-    }
-
-    function totalSupply(uint256 id) external view returns (uint256) {
-        // This would need to be implemented based on how you want to track total supply
-        // For now, returning 0
-        return 0;
-    }
-
-    function mangaChapters(uint256 tokenId)
-        external
-        view
-        returns (
-            LocalizedText memory mangaTitle,
-            LocalizedText memory description,
-            uint256 publishTime,
-            uint256 mintTime,
-            uint256 maxCopies,
-            address creator,
-            string memory uri
-        )
-    {
-        // This would need to be implemented based on how you want to track manga chapters
-        // For now, returning default values
-        return (
-            LocalizedText("", "", ""),
-            LocalizedText("", "", ""),
-            0,
-            0,
-            0,
-            address(0),
-            ""
-        );
-    }
 
     // 清除某月的数据 (紧急情况使用)
     function clearMonthlyData(uint256 yearMonth) external onlyOwner {
