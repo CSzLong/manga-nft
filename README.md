@@ -1,5 +1,13 @@
 # 📘 MangaNFT 合约用户指南
 
+## 合约地址
+
+```text
+平台地址： 0x360dC0d137ae4FF76d419Dad6961ae974Bdd3e79
+数据上传合约 MonthlyDataUploader deployed at: 0x1f7f7DE7F8d9D669DF13e3EDa279CfA2f3e07b64
+NFT合约 MangaNFT deployed at: 0x8053416Ce21D141F51321D2A69785b68436667cc
+```
+
 ## 🔹 概览
 
 - **合约名称**: `MangaNFT` & `MonthlyDataUploader`
@@ -53,22 +61,11 @@ The deployment script automatically:
 如果需要分别部署，可以按以下步骤：
 
 ```bash
-# Step 1: Deploy MonthlyDataUploader with temporary address / 步骤1：使用临时地址部署MonthlyDataUploader
-forge script script/DeployMonthlyDataUploader.s.sol \
-  --sig "run(address)" \
-  0x12E2C1e3A8CA617689A4E4E6d6a098Faf08B8189 \
-  --rpc-url $RPC_URL \
-  --private-key $PRIVATE_KEY \
-  --broadcast
-
-# Step 2: Deploy MangaNFT with MonthlyDataUploader address / 步骤2：使用MonthlyDataUploader地址部署MangaNFT
+# Deploy MangaNFT with MonthlyDataUploader address / 步骤2：使用MonthlyDataUploader地址部署MangaNFT
 forge script script/DeployMangaNFT.s.sol \
   --rpc-url $RPC_URL \
   --private-key $PRIVATE_KEY \
   --broadcast
-
-# Step 3: Update MonthlyDataUploader with MangaNFT address / 步骤3：使用MangaNFT地址更新MonthlyDataUploader
-# (This is handled automatically in the DeployMangaNFT script) / (这在DeployMangaNFT脚本中自动处理)
 ```
 
 ### 环境变量设置 / Environment Variables
@@ -191,7 +188,8 @@ function createChapter(
 	string memory descriptionEn,
 	string memory descriptionJp,
 	uint256 maxCopies,
-	string memory uri_
+	string memory uri_,
+	address creator_addr
 ) external returns (uint256);
 
 ```
@@ -208,6 +206,7 @@ function createChapter(
 |descriptionJp|string|日文描述|
 |maxCopies|uint256|NFT 最大数量（必须为 10 的倍数）|
 |uri\_|string|章节元数据的 IPFS 链接|
+|creator_addr|address|创作者的地址|
 
 
 **调用权限**：任何用户（通常为创作者）

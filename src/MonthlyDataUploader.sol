@@ -108,7 +108,9 @@ contract MonthlyDataUploader is Ownable {
 
     constructor(address _platformAddress, address _mangaNFTContract) Ownable(msg.sender) {
         require(_platformAddress != address(0), "Invalid Platform Address");
-        require(_mangaNFTContract != address(0), "Invalid MangaNFT Contract Address");
+        if (_mangaNFTContract != address(0)) {
+            require(address(_mangaNFTContract).code.length > 0, "Invalid MangaNFT Contract Address");
+        }
         platformAddress = _platformAddress;
         mangaNFTContract = IERC1155(_mangaNFTContract);
     }

@@ -180,7 +180,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         uint256 maxCopies,
         string memory uri_,
         address creator_addr
-    ) external returns (uint256) {
+    ) external onlyPlatform returns (uint256) {
         uint256 newTokenId = generateTokenId();
 
         require(maxCopies > 0 && maxCopies % 10 == 0, "maxCopies must be multiple of 10");
