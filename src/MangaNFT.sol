@@ -7,6 +7,11 @@ import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+interface IMonthlyDataUploader {
+    function recordCreatorPublish(address creator, uint256 publishedCount, uint256 acquiredCount) external;
+    function recordInvestorAcquire(address investor, uint256 acquiredCount) external;
+}
+
 contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
     uint256 private _tokenIdCounter;
     uint256 private _lastTimestamp;
@@ -15,6 +20,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
     address public platformAddress;
     IERC20 public paymentToken;
     uint256 public mintTimeout = 5 minutes;
+    IMonthlyDataUploader public monthlyDataUploader;
 
     struct LocalizedText {
         string zh;
@@ -90,14 +96,16 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         _;
     }
 
-    constructor(string memory _uri, address _platformAddress, address _paymentToken)
+    constructor(string memory _uri, address _platformAddress, address _paymentToken, address _monthlyDataUploader)
         ERC1155(_uri)
         Ownable(msg.sender)
     {
         require(_platformAddress != address(0), "Invalid platform address");
         require(_paymentToken != address(0), "Invalid token address");
+        require(_monthlyDataUploader != address(0), "Invalid monthly data uploader address");
         platformAddress = _platformAddress;
         paymentToken = IERC20(_paymentToken);
+        monthlyDataUploader = IMonthlyDataUploader(_monthlyDataUploader);
     }
 
     function generateTokenId() internal returns (uint256) {
@@ -195,6 +203,9 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         _updateOwnership(newTokenId, creator_addr);
         mangaChapters[newTokenId].mintTime = block.timestamp;
 
+        // Record creator publish data
+        monthlyDataUploader.recordCreatorPublish(creator_addr, 1, amountToMint);
+
         emit ChapterMinted(newTokenId, creator_addr, amountToMint, block.timestamp);
 
         return newTokenId;
@@ -211,6 +222,9 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
 
         _updateOwnership(tokenId, to);
         investorHeld[to].push(tokenId);
+
+        // Record investor acquire data
+        monthlyDataUploader.recordInvestorAcquire(to, amountMinted);
 
         emit ChapterMinted(tokenId, to, amountMinted, block.timestamp);
     }
@@ -288,6 +302,9 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
 
                 _updateOwnership(req.tokenId, req.recipient);
                 investorHeld[req.recipient].push(req.tokenId);
+                
+                // Record investor acquire data
+                monthlyDataUploader.recordInvestorAcquire(req.recipient, req.amountMinted);
             } catch Error(string memory reason) {
                 failures[failCount] = MintFailure(req.recipient, req.tokenId, reason);
                 failCount++;
@@ -332,5 +349,10 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         address oldToken = address(paymentToken);
         paymentToken = IERC20(newToken);
         emit PaymentTokenUpdated(oldToken, newToken);
+    }
+
+    function updateMonthlyDataUploader(address newMonthlyDataUploader) external onlyOwner {
+        require(newMonthlyDataUploader != address(0), "Invalid monthly data uploader address");
+        monthlyDataUploader = IMonthlyDataUploader(newMonthlyDataUploader);
     }
 }

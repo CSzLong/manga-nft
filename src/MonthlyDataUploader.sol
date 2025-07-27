@@ -3,27 +3,6 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-interface IMangaNFT {
-    function getCurrentHeldNFTCountByCreator(address creator) external view returns (uint256);
-    function getCurrentHeldNFTCountByInvestor(address investor) external view returns (uint256);
-    function getTokenOwners(uint256 tokenId) external view returns (address[] memory);
-    function getNFTOwnersWithBalance(uint256 tokenId) external view returns (NFTOwner[] memory);
-    function balanceOf(address account, uint256 id) external view returns (uint256);
-    function totalSupply(uint256 id) external view returns (uint256);
-    function mangaChapters(uint256 tokenId)
-        external
-        view
-        returns (
-            LocalizedText memory mangaTitle,
-            LocalizedText memory description,
-            uint256 publishTime,
-            uint256 mintTime,
-            uint256 maxCopies,
-            address creator,
-            string memory uri
-        );
-}
-
 struct LocalizedText {
     string zh;
     string en;
@@ -36,7 +15,6 @@ struct NFTOwner {
 }
 
 contract MonthlyDataUploader is Ownable {
-    IMangaNFT public mangaNFTContract;
     address public platformAddress;
 
     // 月度数据结构
@@ -111,11 +89,9 @@ contract MonthlyDataUploader is Ownable {
         _;
     }
 
-    constructor(address _platformAddress, address _mangaNFTContract) Ownable(msg.sender) {
+    constructor(address _platformAddress) Ownable(msg.sender) {
         require(_platformAddress != address(0), "Invalid Platform Address");
-        require(_mangaNFTContract != address(0), "Invalid MangaNFT contract address");
         platformAddress = _platformAddress;
-        mangaNFTContract = IMangaNFT(_mangaNFTContract);
     }
 
     // 获取当前年月 (格式: YYYYMM)
@@ -231,7 +207,7 @@ contract MonthlyDataUploader is Ownable {
             uint256 monthlyAcquired = creatorMonthlyAcquired[creator][yearMonth];
 
             // 获取创作者当前持有的NFT总数
-            uint256 currentHeld = mangaNFTContract.getCurrentHeldNFTCountByCreator(creator);
+            uint256 currentHeld = 0; // This will need to be implemented based on how currentHeld is calculated
 
             CreatorMonthlyData memory data = CreatorMonthlyData({
                 creator: creator,
@@ -260,7 +236,7 @@ contract MonthlyDataUploader is Ownable {
             uint256 totalAcquired = investorTotalAcquired[investor];
 
             // 获取投资者当前持有的NFT总数
-            uint256 currentHeld = mangaNFTContract.getCurrentHeldNFTCountByInvestor(investor);
+            uint256 currentHeld = 0; // This will need to be implemented based on how currentHeld is calculated
 
             InvestorMonthlyData memory data = InvestorMonthlyData({
                 investor: investor,
@@ -372,13 +348,13 @@ contract MonthlyDataUploader is Ownable {
     {
         totalPublished = creatorTotalPublished[creator];
         totalAcquired = creatorTotalAcquired[creator];
-        currentHeld = mangaNFTContract.getCurrentHeldNFTCountByCreator(creator);
+        currentHeld = 0; // This will need to be implemented based on how currentHeld is calculated
     }
 
     // 获取投资者的统计信息
     function getInvestorStats(address investor) external view returns (uint256 totalAcquired, uint256 currentHeld) {
         totalAcquired = investorTotalAcquired[investor];
-        currentHeld = mangaNFTContract.getCurrentHeldNFTCountByInvestor(investor);
+        currentHeld = 0; // This will need to be implemented based on how currentHeld is calculated
     }
 
     // 获取创作者某月的发布和获得数量
@@ -432,10 +408,67 @@ contract MonthlyDataUploader is Ownable {
         platformAddress = newPlatformAddress;
     }
 
-    // 更新MangaNFT合约地址
-    function updateMangaNFTContract(address newContract) external onlyOwner {
-        require(newContract != address(0), "Invalid contract address");
-        mangaNFTContract = IMangaNFT(newContract);
+    // Methods that were previously called from MangaNFT contract
+    function getCurrentHeldNFTCountByCreator(address creator) external view returns (uint256) {
+        // This would need to be implemented based on how you want to track creator holdings
+        // For now, returning a placeholder value
+        return creatorTotalAcquired[creator];
+    }
+
+    function getCurrentHeldNFTCountByInvestor(address investor) external view returns (uint256) {
+        // This would need to be implemented based on how you want to track investor holdings
+        // For now, returning a placeholder value
+        return investorTotalAcquired[investor];
+    }
+
+    function getTokenOwners(uint256 tokenId) external view returns (address[] memory) {
+        // This would need to be implemented based on how you want to track token owners
+        // For now, returning empty array
+        return new address[](0);
+    }
+
+    function getNFTOwnersWithBalance(uint256 tokenId) external view returns (NFTOwner[] memory) {
+        // This would need to be implemented based on how you want to track NFT owners with balance
+        // For now, returning empty array
+        return new NFTOwner[](0);
+    }
+
+    function balanceOf(address account, uint256 id) external view returns (uint256) {
+        // This would need to be implemented based on how you want to track balances
+        // For now, returning 0
+        return 0;
+    }
+
+    function totalSupply(uint256 id) external view returns (uint256) {
+        // This would need to be implemented based on how you want to track total supply
+        // For now, returning 0
+        return 0;
+    }
+
+    function mangaChapters(uint256 tokenId)
+        external
+        view
+        returns (
+            LocalizedText memory mangaTitle,
+            LocalizedText memory description,
+            uint256 publishTime,
+            uint256 mintTime,
+            uint256 maxCopies,
+            address creator,
+            string memory uri
+        )
+    {
+        // This would need to be implemented based on how you want to track manga chapters
+        // For now, returning default values
+        return (
+            LocalizedText("", "", ""),
+            LocalizedText("", "", ""),
+            0,
+            0,
+            0,
+            address(0),
+            ""
+        );
     }
 
     // 清除某月的数据 (紧急情况使用)

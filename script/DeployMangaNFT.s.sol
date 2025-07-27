@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "src/MangaNFT.sol";
+import "src/MonthlyDataUploader.sol";
 import "forge-std/Script.sol";
 
 contract DeployMangaNFT is Script {
@@ -13,7 +14,15 @@ contract DeployMangaNFT is Script {
 
         // 启动部署
         vm.startBroadcast(); // 开始广播交易
-        new MangaNFT(_uri, _platformAddress, _paymentToken);
+        
+        // 首先部署 MonthlyDataUploader
+        MonthlyDataUploader monthlyDataUploader = new MonthlyDataUploader(_platformAddress);
+        console.log("MonthlyDataUploader deployed at:", address(monthlyDataUploader));
+        
+        // 然后部署 MangaNFT，传入 MonthlyDataUploader 地址
+        MangaNFT mangaNFT = new MangaNFT(_uri, _platformAddress, _paymentToken, address(monthlyDataUploader));
+        console.log("MangaNFT deployed at:", address(mangaNFT));
+        
         vm.stopBroadcast(); // 停止广播交易
     }
 }
