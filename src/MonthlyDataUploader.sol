@@ -57,7 +57,7 @@ contract MonthlyDataUploader is Ownable {
     mapping(uint256 => address[]) private tokenOwnersList;
     mapping(uint256 => mapping(address => bool)) private tokenOwnerExists;
     mapping(address => uint256[]) private investorHeld;
-    
+
     // Enhanced tracking for individual token acquisitions / 增强的单个代币获得追踪
     mapping(uint256 => mapping(address => uint256)) private tokenAcquiredByInvestor; // tokenId => investor => acquired amount
     mapping(uint256 => uint256) private totalAcquiredPerToken; // tokenId => total acquired across all investors
@@ -494,7 +494,7 @@ contract MonthlyDataUploader is Ownable {
                 total += balance;
             }
         }
-        
+
         return total;
     }
 
@@ -509,7 +509,7 @@ contract MonthlyDataUploader is Ownable {
                 total += balance;
             }
         }
-        
+
         return total;
     }
 
