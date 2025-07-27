@@ -302,7 +302,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
 
                 _updateOwnership(req.tokenId, req.recipient);
                 investorHeld[req.recipient].push(req.tokenId);
-                
+
                 // Record investor acquire data
                 monthlyDataUploader.recordInvestorAcquire(req.recipient, req.amountMinted);
             } catch Error(string memory reason) {

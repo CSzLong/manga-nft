@@ -397,7 +397,6 @@ contract MonthlyDataUploader is Ownable {
         platformAddress = newPlatformAddress;
     }
 
-
     // 清除某月的数据 (紧急情况使用)
     function clearMonthlyData(uint256 yearMonth) external onlyOwner {
         delete monthlyCreatorData[yearMonth];
