@@ -142,6 +142,16 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         return tokenId;
     }
 
+    // Helper function to register investor and record acquisition / 辅助函数：注册投资者并记录获得
+    function _registerInvestorAndRecordAcquisition(address investor, uint256 tokenId, uint256 amountMinted) internal {
+        // Update ownership tracking / 更新所有权追踪
+        monthlyDataUploader.updateOwnership(tokenId, investor);
+        monthlyDataUploader.addInvestorHeld(investor, tokenId);
+
+        // Record investor acquire data / 记录投资者获得数据
+        monthlyDataUploader.recordInvestorAcquire(investor, amountMinted);
+    }
+
     // Token tracking functions now call MonthlyDataUploader / 代币追踪函数现在调用MonthlyDataUploader
     function getTokenOwners(uint256 tokenId) external view returns (address[] memory) {
         return monthlyDataUploader.getTokenOwners(tokenId);
@@ -220,12 +230,8 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         chapter.mintTime = block.timestamp;
         _mint(to, tokenId, amountMinted, "");
 
-        // Update ownership tracking / 更新所有权追踪
-        monthlyDataUploader.updateOwnership(tokenId, to);
-        monthlyDataUploader.addInvestorHeld(to, tokenId);
-
-        // Record investor acquire data / 记录投资者获得数据
-        monthlyDataUploader.recordInvestorAcquire(to, amountMinted);
+        // Register investor and record acquisition / 注册投资者并记录获得
+        _registerInvestorAndRecordAcquisition(to, tokenId, amountMinted);
 
         emit ChapterMinted(tokenId, to, amountMinted, block.timestamp);
     }
@@ -233,9 +239,11 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
     // Investor registration function / 投资者注册函数
     function investorRegistration(address investor, uint256 tokenId) public onlyPlatform {
         require(investor != address(0), "Invalid address");
-        require(balanceOf(investor, tokenId) > 0, "Investor does not hold this NFT");
-        monthlyDataUploader.updateOwnership(tokenId, investor);
-        monthlyDataUploader.addInvestorHeld(investor, tokenId);
+        uint256 amountMinted = balanceOf(investor, tokenId);
+        require(amountMinted > 0, "Investor does not hold this NFT");
+
+        // Register investor and record acquisition / 注册投资者并记录获得
+        _registerInvestorAndRecordAcquisition(investor, tokenId, amountMinted);
     }
 
     // Get chapter title by language / 根据语言获取章节标题
@@ -307,11 +315,8 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
                 successes[successCount] = MintSuccess(req.recipient, req.tokenId);
                 successCount++;
 
-                monthlyDataUploader.updateOwnership(req.tokenId, req.recipient);
-                monthlyDataUploader.addInvestorHeld(req.recipient, req.tokenId);
-
-                // Record investor acquire data / 记录投资者获得数据
-                monthlyDataUploader.recordInvestorAcquire(req.recipient, req.amountMinted);
+                // Register investor and record acquisition / 注册投资者并记录获得
+                _registerInvestorAndRecordAcquisition(req.recipient, req.tokenId, req.amountMinted);
             } catch Error(string memory reason) {
                 failures[failCount] = MintFailure(req.recipient, req.tokenId, reason);
                 failCount++;

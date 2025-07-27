@@ -90,6 +90,14 @@ contract MonthlyDataUploader is Ownable {
         _;
     }
 
+    modifier onlyPlatformOrMangaNFT() {
+        require(
+            msg.sender == platformAddress || msg.sender == address(mangaNFTContract),
+            "Only platform or MangaNFT can call"
+        );
+        _;
+    }
+
     modifier onlyEndOfMonth() {
         uint256 currentTime = block.timestamp;
         // Simplified end-of-month check: last day of every 30 days / 简化的月末检查：每30天的最后一天
@@ -118,7 +126,7 @@ contract MonthlyDataUploader is Ownable {
     // Record creator NFT publish information / 记录创作者发布NFT信息
     function recordCreatorPublish(address creator, uint256 publishedCount, uint256 acquiredCount)
         external
-        onlyPlatform
+        onlyPlatformOrMangaNFT
     {
         require(creator != address(0), "Invalid creator address");
 
@@ -146,7 +154,7 @@ contract MonthlyDataUploader is Ownable {
     }
 
     // Record investor NFT acquire information / 记录投资者获得NFT信息
-    function recordInvestorAcquire(address investor, uint256 acquiredCount) external onlyPlatform {
+    function recordInvestorAcquire(address investor, uint256 acquiredCount) external onlyPlatformOrMangaNFT {
         require(investor != address(0), "Invalid investor address");
 
         // If not an investor, register as investor first / 如果不是投资者，先注册为投资者
