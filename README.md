@@ -2,13 +2,96 @@
 
 ## 🔹 概览
 
-- **合约名称**: `MangaNFT`
+- **合约名称**: `MangaNFT` & `MonthlyDataUploader`
 
 - **标准**: ERC-1155，支持多语言、角色管理、章节创建、批量/单独铸造等
 
 - **Solidity 版本**: `^0.8.24`
 
 - **部署地址**: _部署后请替换此处_
+
+---
+
+## 🚀 部署指南 / Deployment Guide
+
+### 合约依赖关系 / Contract Dependencies
+
+两个合约之间存在循环依赖关系：
+- `MangaNFT` 需要 `MonthlyDataUploader` 的地址来调用数据追踪函数
+- `MonthlyDataUploader` 需要 `MangaNFT` 的地址来查询代币余额
+
+The two contracts have circular dependencies:
+- `MangaNFT` needs `MonthlyDataUploader` address to call data tracking functions
+- `MonthlyDataUploader` needs `MangaNFT` address to query token balances
+
+### 部署步骤 / Deployment Steps
+
+#### 方法一：单次部署（推荐） / Method 1: Single Deployment (Recommended)
+
+使用更新后的部署脚本，自动处理循环依赖：
+
+```bash
+# Deploy both contracts together / 一次性部署两个合约
+forge script script/DeployMangaNFT.s.sol \
+  --rpc-url $RPC_URL \
+  --private-key $PRIVATE_KEY \
+  --broadcast
+```
+
+部署脚本会自动执行以下步骤：
+1. 使用临时地址部署 `MonthlyDataUploader`
+2. 使用 `MonthlyDataUploader` 地址部署 `MangaNFT`
+3. 更新 `MonthlyDataUploader` 中的 `MangaNFT` 地址
+
+The deployment script automatically:
+1. Deploy `MonthlyDataUploader` with temporary address
+2. Deploy `MangaNFT` with `MonthlyDataUploader` address
+3. Update `MangaNFT` address in `MonthlyDataUploader`
+
+#### 方法二：分步部署 / Method 2: Step-by-step Deployment
+
+如果需要分别部署，可以按以下步骤：
+
+```bash
+# Step 1: Deploy MonthlyDataUploader with temporary address / 步骤1：使用临时地址部署MonthlyDataUploader
+forge script script/DeployMonthlyDataUploader.s.sol \
+  --sig "run(address)" \
+  0x12E2C1e3A8CA617689A4E4E6d6a098Faf08B8189 \
+  --rpc-url $RPC_URL \
+  --private-key $PRIVATE_KEY \
+  --broadcast
+
+# Step 2: Deploy MangaNFT with MonthlyDataUploader address / 步骤2：使用MonthlyDataUploader地址部署MangaNFT
+forge script script/DeployMangaNFT.s.sol \
+  --rpc-url $RPC_URL \
+  --private-key $PRIVATE_KEY \
+  --broadcast
+
+# Step 3: Update MonthlyDataUploader with MangaNFT address / 步骤3：使用MangaNFT地址更新MonthlyDataUploader
+# (This is handled automatically in the DeployMangaNFT script) / (这在DeployMangaNFT脚本中自动处理)
+```
+
+### 环境变量设置 / Environment Variables
+
+```bash
+export RPC_URL="your-rpc-url"
+export PRIVATE_KEY="your-private-key"
+```
+
+### 验证部署 / Verify Deployment
+
+部署完成后，请验证以下内容：
+
+1. 检查合约地址是否正确
+2. 验证 `MonthlyDataUploader` 中的 `mangaNFTContract` 地址
+3. 验证 `MangaNFT` 中的 `monthlyDataUploader` 地址
+4. 测试基本功能是否正常
+
+After deployment, verify:
+1. Contract addresses are correct
+2. `mangaNFTContract` address in `MonthlyDataUploader`
+3. `monthlyDataUploader` address in `MangaNFT`
+4. Basic functionality works correctly
 
 ---
 
@@ -284,18 +367,7 @@ function investorRegistration(address investor, uint256 tokenId) public onlyPlat
 
 - 推荐事件监听而非主动查询以节省链上读开销
 
+- 代币追踪逻辑已迁移到 `MonthlyDataUploader` 合约中
 
+- 两个合约之间存在循环依赖，部署时需要使用提供的部署脚本
 
-### Deployment script
-
-```zsh
-forge script script/DeployMangaNFT.s.sol --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast  
-```
-
-
-```bash
-forge script script/DeployMonthlyDataUploader.s.sol:DeployMonthlyDataUploader \
-  --sig "run(address,address)" \
-  0x12E2C1e3A8CA617689A4E4E6d6a098Faf08B8189 0xAB358Cc9527Cda470CbFF9155470840c3dB68CD2 \
-  --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
-```

@@ -7,9 +7,23 @@ import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+// NFT Owner structure / NFT所有者结构
+struct NFTOwner {
+    address owner;
+    uint256 balance;
+}
+
+// Monthly Data Uploader interface / 月度数据上传器接口
 interface IMonthlyDataUploader {
     function recordCreatorPublish(address creator, uint256 publishedCount, uint256 acquiredCount) external;
     function recordInvestorAcquire(address investor, uint256 acquiredCount) external;
+    function updateOwnership(uint256 tokenId, address owner) external;
+    function addCreatorChapter(address creator, uint256 tokenId) external;
+    function addInvestorHeld(address investor, uint256 tokenId) external;
+    function getTokenOwners(uint256 tokenId) external view returns (address[] memory);
+    function getCurrentHeldNFTCountByCreatorExternal(address creator) external view returns (uint256);
+    function getCurrentHeldNFTCountByInvestorExternal(address investor) external view returns (uint256);
+    function getNFTOwnersWithBalance(uint256 tokenId) external view returns (NFTOwner[] memory);
 }
 
 contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
@@ -22,12 +36,14 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
     uint256 public mintTimeout = 5 minutes;
     IMonthlyDataUploader public monthlyDataUploader;
 
+    // Localized text structure / 本地化文本结构
     struct LocalizedText {
         string zh;
         string en;
         string jp;
     }
 
+    // Manga chapter structure / 漫画章节结构
     struct MangaChapter {
         LocalizedText mangaTitle;
         LocalizedText description;
@@ -38,6 +54,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         string uri;
     }
 
+    // Pending payment structure / 待支付结构
     struct PendingPayment {
         uint256 tokenId;
         uint256 timestamp;
@@ -45,35 +62,31 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         bool minted;
     }
 
-    struct NFTOwner {
-        address owner;
-        uint256 balance;
-    }
-
+    // Mint request structure / 铸造请求结构
     struct MintRequest {
         address recipient;
         uint256 tokenId;
         uint256 amountMinted;
     }
 
+    // Mint success structure / 铸造成功结构
     struct MintSuccess {
         address recipient;
         uint256 tokenId;
     }
 
+    // Mint failure structure / 铸造失败结构
     struct MintFailure {
         address recipient;
         uint256 tokenId;
         string reason;
     }
 
+    // Storage mappings / 存储映射
     mapping(uint256 => MangaChapter) public mangaChapters;
     mapping(address => PendingPayment[]) public payments;
-    mapping(address => uint256[]) private creatorChapters;
-    mapping(uint256 => address[]) private tokenOwnersList;
-    mapping(uint256 => mapping(address => bool)) private tokenOwnerExists;
-    mapping(address => uint256[]) private investorHeld;
 
+    // Events / 事件
     event ChapterCreated(
         uint256 indexed tokenId, address indexed creator, string mangaTitleZh, string mangaTitleEn, string mangaTitleJp
     );
@@ -91,6 +104,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
 
     event BatchFreeMinted(MintSuccess[] successes, MintFailure[] failures);
 
+    // Modifiers / 修饰符
     modifier onlyPlatform() {
         require(msg.sender == platformAddress, "Only platform can mint");
         _;
@@ -106,8 +120,13 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         platformAddress = _platformAddress;
         paymentToken = IERC20(_paymentToken);
         monthlyDataUploader = IMonthlyDataUploader(_monthlyDataUploader);
+
+        // Update the MangaNFT contract address in MonthlyDataUploader / 更新MonthlyDataUploader中的MangaNFT合约地址
+        // Note: This requires the MonthlyDataUploader to be deployed first / 注意：这需要先部署MonthlyDataUploader
+        // and the deployer to have owner permissions / 并且部署者需要拥有所有者权限
     }
 
+    // Generate unique token ID / 生成唯一代币ID
     function generateTokenId() internal returns (uint256) {
         uint256 currentTimestamp = block.timestamp;
 
@@ -123,46 +142,24 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         return tokenId;
     }
 
-    function _updateOwnership(uint256 tokenId, address owner) internal {
-        if (!tokenOwnerExists[tokenId][owner]) {
-            tokenOwnerExists[tokenId][owner] = true;
-            tokenOwnersList[tokenId].push(owner);
-        }
-    }
-
+    // Token tracking functions now call MonthlyDataUploader / 代币追踪函数现在调用MonthlyDataUploader
     function getTokenOwners(uint256 tokenId) external view returns (address[] memory) {
-        return tokenOwnersList[tokenId];
+        return monthlyDataUploader.getTokenOwners(tokenId);
     }
 
-    function getCurrentHeldNFTCountByCreator(address creator) external view returns (uint256 total) {
-        uint256[] memory chapters = creatorChapters[creator];
-        for (uint256 i = 0; i < chapters.length; i++) {
-            uint256 tokenId = chapters[i];
-            total += balanceOf(creator, tokenId);
-        }
-        return total;
+    function getCurrentHeldNFTCountByCreator(address creator) external view returns (uint256) {
+        return monthlyDataUploader.getCurrentHeldNFTCountByCreatorExternal(creator);
     }
 
-    function getCurrentHeldNFTCountByInvestor(address investor) external view returns (uint256 total) {
-        uint256[] memory chapters = investorHeld[investor];
-        for (uint256 i = 0; i < chapters.length; i++) {
-            uint256 tokenId = chapters[i];
-            total += balanceOf(investor, tokenId);
-        }
-        return total;
+    function getCurrentHeldNFTCountByInvestor(address investor) external view returns (uint256) {
+        return monthlyDataUploader.getCurrentHeldNFTCountByInvestorExternal(investor);
     }
 
     function getNFTOwnersWithBalance(uint256 tokenId) external view returns (NFTOwner[] memory) {
-        address[] memory owners = tokenOwnersList[tokenId];
-        NFTOwner[] memory results = new NFTOwner[](owners.length);
-
-        for (uint256 i = 0; i < owners.length; i++) {
-            results[i] = NFTOwner({owner: owners[i], balance: balanceOf(owners[i], tokenId)});
-        }
-
-        return results;
+        return monthlyDataUploader.getNFTOwnersWithBalance(tokenId);
     }
 
+    // Create new manga chapter / 创建新的漫画章节
     function createChapter(
         string memory mangaTitleZh,
         string memory mangaTitleEn,
@@ -194,23 +191,26 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
 
         emit ChapterCreated(newTokenId, creator_addr, mangaTitleZh, mangaTitleEn, mangaTitleJp);
 
-        creatorChapters[creator_addr].push(newTokenId);
+        // Add creator chapter to tracking / 添加创作者章节到追踪
+        monthlyDataUploader.addCreatorChapter(creator_addr, newTokenId);
 
         uint256 amountToMint = (maxCopies * 4) / 5;
         _mint(creator_addr, newTokenId, amountToMint, "");
         _mint(platformAddress, newTokenId, 1, "");
 
-        _updateOwnership(newTokenId, creator_addr);
+        // Update ownership tracking / 更新所有权追踪
+        monthlyDataUploader.updateOwnership(newTokenId, creator_addr);
         mangaChapters[newTokenId].mintTime = block.timestamp;
 
-        // Record creator publish data
-        monthlyDataUploader.recordCreatorPublish(creator_addr, 1, amountToMint);
+        // Record creator publish data / 记录创作者发布数据
+        monthlyDataUploader.recordCreatorPublish(creator_addr, maxCopies, amountToMint);
 
         emit ChapterMinted(newTokenId, creator_addr, amountToMint, block.timestamp);
 
         return newTokenId;
     }
 
+    // Free mint function / 免费铸造函数
     function freeMint(address to, uint256 tokenId, uint256 amountMinted) public onlyPlatform {
         require(to != address(0), "Invalid recipient");
 
@@ -220,22 +220,25 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         chapter.mintTime = block.timestamp;
         _mint(to, tokenId, amountMinted, "");
 
-        _updateOwnership(tokenId, to);
-        investorHeld[to].push(tokenId);
+        // Update ownership tracking / 更新所有权追踪
+        monthlyDataUploader.updateOwnership(tokenId, to);
+        monthlyDataUploader.addInvestorHeld(to, tokenId);
 
-        // Record investor acquire data
+        // Record investor acquire data / 记录投资者获得数据
         monthlyDataUploader.recordInvestorAcquire(to, amountMinted);
 
         emit ChapterMinted(tokenId, to, amountMinted, block.timestamp);
     }
 
+    // Investor registration function / 投资者注册函数
     function investorRegistration(address investor, uint256 tokenId) public onlyPlatform {
         require(investor != address(0), "Invalid address");
         require(balanceOf(investor, tokenId) > 0, "Investor does not hold this NFT");
-        _updateOwnership(tokenId, investor);
-        investorHeld[investor].push(tokenId);
+        monthlyDataUploader.updateOwnership(tokenId, investor);
+        monthlyDataUploader.addInvestorHeld(investor, tokenId);
     }
 
+    // Get chapter title by language / 根据语言获取章节标题
     function getChapterTitle(uint256 tokenId, string memory lang) external view returns (string memory) {
         LocalizedText memory title = mangaChapters[tokenId].mangaTitle;
         if (keccak256(bytes(lang)) == keccak256("zh")) return title.zh;
@@ -244,6 +247,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         return "";
     }
 
+    // Update manga title / 更新漫画标题
     function updateMangaTitle(uint256 tokenId, string memory language, string memory newTitle) external {
         MangaChapter storage chapter = mangaChapters[tokenId];
         require(msg.sender == chapter.creator, "Only creator can update");
@@ -261,6 +265,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         emit MangaTitleUpdated(tokenId, language, newTitle);
     }
 
+    // Update chapter description / 更新章节描述
     function updateChapterDescription(uint256 tokenId, string memory language, string memory newDescription) external {
         MangaChapter storage chapter = mangaChapters[tokenId];
         require(msg.sender == chapter.creator, "Only creator can update");
@@ -278,6 +283,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         emit ChapterDescriptionUpdated(tokenId, language, newDescription);
     }
 
+    // Safe free mint function / 安全的免费铸造函数
     function _safeFreeMint(address to, uint256 tokenId, uint256 amountMinted) external onlyPlatform {
         require(to != address(0), "Invalid address");
 
@@ -287,6 +293,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         chapter.mintTime = block.timestamp;
     }
 
+    // Batch safe free mint function / 批量安全免费铸造函数
     function batchSafeFreeMint(MintRequest[] calldata requests) external onlyPlatform {
         MintSuccess[] memory successes = new MintSuccess[](requests.length);
         MintFailure[] memory failures = new MintFailure[](requests.length);
@@ -300,10 +307,10 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
                 successes[successCount] = MintSuccess(req.recipient, req.tokenId);
                 successCount++;
 
-                _updateOwnership(req.tokenId, req.recipient);
-                investorHeld[req.recipient].push(req.tokenId);
+                monthlyDataUploader.updateOwnership(req.tokenId, req.recipient);
+                monthlyDataUploader.addInvestorHeld(req.recipient, req.tokenId);
 
-                // Record investor acquire data
+                // Record investor acquire data / 记录投资者获得数据
                 monthlyDataUploader.recordInvestorAcquire(req.recipient, req.amountMinted);
             } catch Error(string memory reason) {
                 failures[failCount] = MintFailure(req.recipient, req.tokenId, reason);
@@ -322,6 +329,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         emit BatchFreeMinted(successes, failures);
     }
 
+    // Update function override / 更新函数重写
     function _update(address from, address to, uint256[] memory ids, uint256[] memory values)
         internal
         override(ERC1155, ERC1155Supply)
@@ -329,14 +337,17 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         super._update(from, to, ids, values);
     }
 
+    // Get chapter information / 获取章节信息
     function getChapterInfo(uint256 tokenId) external view returns (MangaChapter memory) {
         return mangaChapters[tokenId];
     }
 
+    // Get URI for token / 获取代币的URI
     function uri(uint256 tokenId) public view override returns (string memory) {
         return mangaChapters[tokenId].uri;
     }
 
+    // Update platform address / 更新平台地址
     function updatePlatformAddress(address newAddress) external onlyOwner {
         require(newAddress != address(0), "Invalid address");
         address oldAddress = platformAddress;
@@ -344,6 +355,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         emit PlatformAddressUpdated(oldAddress, newAddress);
     }
 
+    // Update payment token / 更新支付代币
     function updatePaymentToken(address newToken) external onlyOwner {
         require(newToken != address(0), "Invalid token address");
         address oldToken = address(paymentToken);
@@ -351,6 +363,7 @@ contract MangaNFT is ERC1155, ERC1155Supply, Ownable {
         emit PaymentTokenUpdated(oldToken, newToken);
     }
 
+    // Update monthly data uploader / 更新月度数据上传器
     function updateMonthlyDataUploader(address newMonthlyDataUploader) external onlyOwner {
         require(newMonthlyDataUploader != address(0), "Invalid monthly data uploader address");
         monthlyDataUploader = IMonthlyDataUploader(newMonthlyDataUploader);

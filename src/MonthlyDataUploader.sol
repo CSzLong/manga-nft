@@ -2,48 +2,67 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 
 contract MonthlyDataUploader is Ownable {
     address public platformAddress;
+    IERC1155 public mangaNFTContract;
 
-    // 月度数据结构
+    // Monthly data structures / 月度数据结构
     struct CreatorMonthlyData {
         address creator;
-        uint256 monthlyPublished; // 当月发布的数量
-        uint256 totalPublished; // 总发布的数量
-        uint256 monthlyAcquired; // 当月获得总量
-        uint256 currentHeld; // 现有总量
-        uint256 timestamp; // 上传时间戳
+        uint256 monthlyPublished; // Monthly published count / 当月发布的数量
+        uint256 totalPublished; // Total published count / 总发布的数量
+        uint256 monthlyAcquired; // Monthly acquired count / 当月获得总量
+        uint256 currentHeld; // Current held count / 现有总量
+        uint256 timestamp; // Upload timestamp / 上传时间戳
     }
 
     struct InvestorMonthlyData {
         address investor;
-        uint256 monthlyAcquired; // 当月获得总量
-        uint256 totalAcquired; // 总获得量
-        uint256 currentHeld; // 现有量
-        uint256 timestamp; // 上传时间戳
+        uint256 monthlyAcquired; // Monthly acquired count / 当月获得总量
+        uint256 totalAcquired; // Total acquired count / 总获得量
+        uint256 currentHeld; // Current held count / 现有量
+        uint256 timestamp; // Upload timestamp / 上传时间戳
     }
 
-    // 存储月度数据
-    mapping(uint256 => CreatorMonthlyData[]) public monthlyCreatorData; // 年月 => 创作者数据数组
-    mapping(uint256 => InvestorMonthlyData[]) public monthlyInvestorData; // 年月 => 投资者数据数组
+    // Token tracking structures / NFT追踪结构
+    struct NFTOwner {
+        address owner;
+        uint256 balance;
+    }
 
-    // 用于追踪创作者的数据
-    mapping(address => uint256) public creatorTotalPublished; // 创作者 => 总发布数量
-    mapping(address => uint256) public creatorTotalAcquired; // 创作者 => 总获得数量
-    mapping(address => mapping(uint256 => uint256)) public creatorMonthlyPublished; // 创作者 => 年月 => 当月发布数量
-    mapping(address => mapping(uint256 => uint256)) public creatorMonthlyAcquired; // 创作者 => 年月 => 当月获得数量
+    // Monthly data storage / 月度数据存储
+    mapping(uint256 => CreatorMonthlyData[]) public monthlyCreatorData; // YearMonth => Creator data array / 年月 => 创作者数据数组
+    mapping(uint256 => InvestorMonthlyData[]) public monthlyInvestorData; // YearMonth => Investor data array / 年月 => 投资者数据数组
 
-    // 用于追踪投资者的数据
-    mapping(address => uint256) public investorTotalAcquired; // 投资者 => 总获得数量
-    mapping(address => mapping(uint256 => uint256)) public investorMonthlyAcquired; // 投资者 => 年月 => 当月获得数量
+    // Creator data tracking / 创作者数据追踪
+    mapping(address => uint256) public creatorTotalPublished; // Creator => Total published count / 创作者 => 总发布数量
+    mapping(address => uint256) public creatorTotalAcquired; // Creator => Total acquired count / 创作者 => 总获得数量
+    mapping(address => mapping(uint256 => uint256)) public creatorMonthlyPublished; // Creator => YearMonth => Monthly published count / 创作者 => 年月 => 当月发布数量
+    mapping(address => mapping(uint256 => uint256)) public creatorMonthlyAcquired; // Creator => YearMonth => Monthly acquired count / 创作者 => 年月 => 当月获得数量
 
-    // 记录所有创作者和投资者地址
+    // Investor data tracking / 投资者数据追踪
+    mapping(address => uint256) public investorTotalAcquired; // Investor => Total acquired count / 投资者 => 总获得数量
+    mapping(address => mapping(uint256 => uint256)) public investorMonthlyAcquired; // Investor => YearMonth => Monthly acquired count / 投资者 => 年月 => 当月获得数量
+
+    // Registered creator and investor addresses / 注册的创作者和投资者地址
     mapping(address => bool) public isCreator;
     mapping(address => bool) public isInvestor;
     address[] public creators;
     address[] public investors;
 
+    // Token tracking mappings (moved from MangaNFT) / NFT追踪映射（从MangaNFT迁移）
+    mapping(address => uint256[]) private creatorChapters;
+    mapping(uint256 => address[]) private tokenOwnersList;
+    mapping(uint256 => mapping(address => bool)) private tokenOwnerExists;
+    mapping(address => uint256[]) private investorHeld;
+    
+    // Enhanced tracking for individual token acquisitions / 增强的单个代币获得追踪
+    mapping(uint256 => mapping(address => uint256)) private tokenAcquiredByInvestor; // tokenId => investor => acquired amount
+    mapping(uint256 => uint256) private totalAcquiredPerToken; // tokenId => total acquired across all investors
+
+    // Events / 事件
     event MonthlyDataUploaded(uint256 indexed yearMonth, uint256 creatorCount, uint256 investorCount);
     event CreatorDataUploaded(
         uint256 indexed yearMonth,
@@ -65,6 +84,7 @@ contract MonthlyDataUploader is Ownable {
     );
     event InvestorNFTAcquired(address indexed investor, uint256 acquiredCount, uint256 totalAcquired);
 
+    // Modifiers / 修饰符
     modifier onlyPlatform() {
         require(msg.sender == platformAddress, "Only platform can call");
         _;
@@ -72,35 +92,37 @@ contract MonthlyDataUploader is Ownable {
 
     modifier onlyEndOfMonth() {
         uint256 currentTime = block.timestamp;
-        // 简化的月末检查：每30天的最后一天
+        // Simplified end-of-month check: last day of every 30 days / 简化的月末检查：每30天的最后一天
         uint256 dayInMonth = (currentTime / 1 days) % 30;
         require(dayInMonth >= 28, "Can only upload near end of month");
         _;
     }
 
-    constructor(address _platformAddress) Ownable(msg.sender) {
+    constructor(address _platformAddress, address _mangaNFTContract) Ownable(msg.sender) {
         require(_platformAddress != address(0), "Invalid Platform Address");
+        require(_mangaNFTContract != address(0), "Invalid MangaNFT Contract Address");
         platformAddress = _platformAddress;
+        mangaNFTContract = IERC1155(_mangaNFTContract);
     }
 
-    // 获取当前年月 (格式: YYYYMM)
+    // Get current year-month (format: YYYYMM) / 获取当前年月（格式：YYYYMM）
     function getCurrentYearMonth() public view returns (uint256) {
         uint256 timestamp = block.timestamp;
-        // 简化的年月计算
-        uint256 year = 2024 + ((timestamp - 1704067200) / (365 days)); // 从2024年1月1日开始
+        // Simplified year-month calculation / 简化的年月计算
+        uint256 year = 2024 + ((timestamp - 1704067200) / (365 days)); // Starting from January 1, 2024 / 从2024年1月1日开始
         uint256 month = (((timestamp - 1704067200) % (365 days)) / (30 days)) + 1;
         if (month > 12) month = 12;
         return year * 100 + month;
     }
 
-    // 记录创作者发布NFT信息
+    // Record creator NFT publish information / 记录创作者发布NFT信息
     function recordCreatorPublish(address creator, uint256 publishedCount, uint256 acquiredCount)
         external
         onlyPlatform
     {
         require(creator != address(0), "Invalid creator address");
 
-        // 如果不是创作者，先注册为创作者
+        // If not a creator, register as creator first / 如果不是创作者，先注册为创作者
         if (!isCreator[creator]) {
             isCreator[creator] = true;
             creators.push(creator);
@@ -108,26 +130,26 @@ contract MonthlyDataUploader is Ownable {
 
         uint256 currentYearMonth = getCurrentYearMonth();
 
-        // 更新当月发布数量
+        // Update monthly published count / 更新当月发布数量
         creatorMonthlyPublished[creator][currentYearMonth] += publishedCount;
 
-        // 更新总发布数量
+        // Update total published count / 更新总发布数量
         creatorTotalPublished[creator] += publishedCount;
 
-        // 更新当月获得数量（平台mint给作者的数量）
+        // Update monthly acquired count (platform minted to author) / 更新当月获得数量（平台mint给作者的数量）
         creatorMonthlyAcquired[creator][currentYearMonth] += acquiredCount;
 
-        // 更新总获得数量
+        // Update total acquired count / 更新总获得数量
         creatorTotalAcquired[creator] += acquiredCount;
 
         emit CreatorNFTPublished(creator, publishedCount, creatorTotalPublished[creator], acquiredCount);
     }
 
-    // 记录投资者获得NFT信息
+    // Record investor NFT acquire information / 记录投资者获得NFT信息
     function recordInvestorAcquire(address investor, uint256 acquiredCount) external onlyPlatform {
         require(investor != address(0), "Invalid investor address");
 
-        // 如果不是投资者，先注册为投资者
+        // If not an investor, register as investor first / 如果不是投资者，先注册为投资者
         if (!isInvestor[investor]) {
             isInvestor[investor] = true;
             investors.push(investor);
@@ -135,68 +157,68 @@ contract MonthlyDataUploader is Ownable {
 
         uint256 currentYearMonth = getCurrentYearMonth();
 
-        // 更新当月获得数量
+        // Update monthly acquired count / 更新当月获得数量
         investorMonthlyAcquired[investor][currentYearMonth] += acquiredCount;
 
-        // 更新总获得数量
+        // Update total acquired count / 更新总获得数量
         investorTotalAcquired[investor] += acquiredCount;
 
         emit InvestorNFTAcquired(investor, acquiredCount, investorTotalAcquired[investor]);
     }
 
-    // 上传月度数据 (只能在月末执行)
+    // Upload monthly data (can only be executed at end of month) / 上传月度数据（只能在月末执行）
     function uploadMonthlyData() external onlyOwner onlyEndOfMonth {
         uint256 currentYearMonth = getCurrentYearMonth();
 
-        // 上传创作者数据
+        // Upload creator data / 上传创作者数据
         _uploadCreatorData(currentYearMonth);
 
-        // 上传投资者数据
+        // Upload investor data / 上传投资者数据
         _uploadInvestorData(currentYearMonth);
 
         emit MonthlyDataUploaded(currentYearMonth, creators.length, investors.length);
     }
 
-    // 强制上传月度数据 (紧急情况下使用，跳过月末检查)
+    // Force upload monthly data (for emergency use, skip end-of-month check) / 强制上传月度数据（紧急情况下使用，跳过月末检查）
     function forceUploadMonthlyData() external onlyOwner {
         uint256 currentYearMonth = getCurrentYearMonth();
 
-        // 上传创作者数据
+        // Upload creator data / 上传创作者数据
         _uploadCreatorData(currentYearMonth);
 
-        // 上传投资者数据
+        // Upload investor data / 上传投资者数据
         _uploadInvestorData(currentYearMonth);
 
         emit MonthlyDataUploaded(currentYearMonth, creators.length, investors.length);
     }
 
-    // 指定年月上传数据
+    // Upload data for specified year-month / 指定年月上传数据
     function uploadDataForMonth(uint256 yearMonth) external onlyOwner {
-        // 上传创作者数据
+        // Upload creator data / 上传创作者数据
         _uploadCreatorData(yearMonth);
 
-        // 上传投资者数据
+        // Upload investor data / 上传投资者数据
         _uploadInvestorData(yearMonth);
 
         emit MonthlyDataUploaded(yearMonth, creators.length, investors.length);
     }
 
-    // 内部函数：上传创作者数据
+    // Internal function: Upload creator data / 内部函数：上传创作者数据
     function _uploadCreatorData(uint256 yearMonth) internal {
         for (uint256 i = 0; i < creators.length; i++) {
             address creator = creators[i];
 
-            // 获取当月发布数量
+            // Get monthly published count / 获取当月发布数量
             uint256 monthlyPublished = creatorMonthlyPublished[creator][yearMonth];
 
-            // 获取总发布数量
+            // Get total published count / 获取总发布数量
             uint256 totalPublished = creatorTotalPublished[creator];
 
-            // 获取当月获得数量
+            // Get monthly acquired count / 获取当月获得数量
             uint256 monthlyAcquired = creatorMonthlyAcquired[creator][yearMonth];
 
-            // 获取创作者当前持有的NFT总数
-            uint256 currentHeld = 0; // This will need to be implemented based on how currentHeld is calculated
+            // Get creator's current held NFT total count / 获取创作者当前持有的NFT总数
+            uint256 currentHeld = getCurrentHeldNFTCountByCreator(creator);
 
             CreatorMonthlyData memory data = CreatorMonthlyData({
                 creator: creator,
@@ -213,19 +235,19 @@ contract MonthlyDataUploader is Ownable {
         }
     }
 
-    // 内部函数：上传投资者数据
+    // Internal function: Upload investor data / 内部函数：上传投资者数据
     function _uploadInvestorData(uint256 yearMonth) internal {
         for (uint256 i = 0; i < investors.length; i++) {
             address investor = investors[i];
 
-            // 获取当月获得数量
+            // Get monthly acquired count / 获取当月获得数量
             uint256 monthlyAcquired = investorMonthlyAcquired[investor][yearMonth];
 
-            // 获取总获得数量
+            // Get total acquired count / 获取总获得数量
             uint256 totalAcquired = investorTotalAcquired[investor];
 
-            // 获取投资者当前持有的NFT总数
-            uint256 currentHeld = 0; // This will need to be implemented based on how currentHeld is calculated
+            // Get investor's current held NFT total count / 获取投资者当前持有的NFT总数
+            uint256 currentHeld = getCurrentHeldNFTCountByInvestor(investor);
 
             InvestorMonthlyData memory data = InvestorMonthlyData({
                 investor: investor,
@@ -241,7 +263,7 @@ contract MonthlyDataUploader is Ownable {
         }
     }
 
-    // 手动添加创作者地址
+    // Manually add creator address / 手动添加创作者地址
     function addCreator(address creator) external onlyOwner {
         require(creator != address(0), "Invalid creator address");
         if (!isCreator[creator]) {
@@ -250,7 +272,7 @@ contract MonthlyDataUploader is Ownable {
         }
     }
 
-    // 手动添加投资者地址
+    // Manually add investor address / 手动添加投资者地址
     function addInvestor(address investor) external onlyOwner {
         require(investor != address(0), "Invalid investor address");
         if (!isInvestor[investor]) {
@@ -259,7 +281,7 @@ contract MonthlyDataUploader is Ownable {
         }
     }
 
-    // 批量添加创作者
+    // Batch add creators / 批量添加创作者
     function addCreators(address[] calldata _creators) external onlyOwner {
         for (uint256 i = 0; i < _creators.length; i++) {
             if (_creators[i] != address(0) && !isCreator[_creators[i]]) {
@@ -269,7 +291,7 @@ contract MonthlyDataUploader is Ownable {
         }
     }
 
-    // 批量添加投资者
+    // Batch add investors / 批量添加投资者
     function addInvestors(address[] calldata _investors) external onlyOwner {
         for (uint256 i = 0; i < _investors.length; i++) {
             if (_investors[i] != address(0) && !isInvestor[_investors[i]]) {
@@ -279,17 +301,17 @@ contract MonthlyDataUploader is Ownable {
         }
     }
 
-    // 查询某月的创作者数据
+    // Query creator data by month / 查询某月的创作者数据
     function getCreatorDataByMonth(uint256 yearMonth) external view returns (CreatorMonthlyData[] memory) {
         return monthlyCreatorData[yearMonth];
     }
 
-    // 查询某月的投资者数据
+    // Query investor data by month / 查询某月的投资者数据
     function getInvestorDataByMonth(uint256 yearMonth) external view returns (InvestorMonthlyData[] memory) {
         return monthlyInvestorData[yearMonth];
     }
 
-    // 查询特定创作者某月的数据
+    // Query specific creator's monthly data / 查询特定创作者某月的数据
     function getCreatorMonthlyData(address creator, uint256 yearMonth)
         external
         view
@@ -304,7 +326,7 @@ contract MonthlyDataUploader is Ownable {
         revert("Creator data not found for specified month");
     }
 
-    // 查询特定投资者某月的数据
+    // Query specific investor's monthly data / 查询特定投资者某月的数据
     function getInvestorMonthlyData(address investor, uint256 yearMonth)
         external
         view
@@ -319,17 +341,17 @@ contract MonthlyDataUploader is Ownable {
         revert("Investor data not found for specified month");
     }
 
-    // 获取所有注册的创作者
+    // Get all registered creators / 获取所有注册的创作者
     function getAllCreators() external view returns (address[] memory) {
         return creators;
     }
 
-    // 获取所有注册的投资者
+    // Get all registered investors / 获取所有注册的投资者
     function getAllInvestors() external view returns (address[] memory) {
         return investors;
     }
 
-    // 获取创作者的统计信息
+    // Get creator statistics / 获取创作者的统计信息
     function getCreatorStats(address creator)
         external
         view
@@ -337,16 +359,16 @@ contract MonthlyDataUploader is Ownable {
     {
         totalPublished = creatorTotalPublished[creator];
         totalAcquired = creatorTotalAcquired[creator];
-        currentHeld = 0; // This will need to be implemented based on how currentHeld is calculated
+        currentHeld = getCurrentHeldNFTCountByCreator(creator);
     }
 
-    // 获取投资者的统计信息
+    // Get investor statistics / 获取投资者的统计信息
     function getInvestorStats(address investor) external view returns (uint256 totalAcquired, uint256 currentHeld) {
         totalAcquired = investorTotalAcquired[investor];
-        currentHeld = 0; // This will need to be implemented based on how currentHeld is calculated
+        currentHeld = getCurrentHeldNFTCountByInvestor(investor);
     }
 
-    // 获取创作者某月的发布和获得数量
+    // Get creator's monthly publish and acquire count / 获取创作者某月的发布和获得数量
     function getCreatorMonthlyStats(address creator, uint256 yearMonth)
         external
         view
@@ -356,7 +378,7 @@ contract MonthlyDataUploader is Ownable {
         monthlyAcquired = creatorMonthlyAcquired[creator][yearMonth];
     }
 
-    // 获取投资者某月的获得数量
+    // Get investor's monthly acquire count / 获取投资者某月的获得数量
     function getInvestorMonthlyStats(address investor, uint256 yearMonth)
         external
         view
@@ -365,7 +387,7 @@ contract MonthlyDataUploader is Ownable {
         monthlyAcquired = investorMonthlyAcquired[investor][yearMonth];
     }
 
-    // 批量获取多个月的创作者数据
+    // Batch get creator data for multiple months / 批量获取多个月的创作者数据
     function getCreatorDataByMonths(uint256[] calldata yearMonths)
         external
         view
@@ -378,7 +400,7 @@ contract MonthlyDataUploader is Ownable {
         return results;
     }
 
-    // 批量获取多个月的投资者数据
+    // Batch get investor data for multiple months / 批量获取多个月的投资者数据
     function getInvestorDataByMonths(uint256[] calldata yearMonths)
         external
         view
@@ -391,24 +413,24 @@ contract MonthlyDataUploader is Ownable {
         return results;
     }
 
-    // 更新平台地址
+    // Update platform address / 更新平台地址
     function updatePlatformAddress(address newPlatformAddress) external onlyOwner {
         require(newPlatformAddress != address(0), "Invalid platform address");
         platformAddress = newPlatformAddress;
     }
 
-    // 清除某月的数据 (紧急情况使用)
+    // Clear monthly data (for emergency use) / 清除某月的数据（紧急情况使用）
     function clearMonthlyData(uint256 yearMonth) external onlyOwner {
         delete monthlyCreatorData[yearMonth];
         delete monthlyInvestorData[yearMonth];
     }
 
-    // 移除创作者
+    // Remove creator / 移除创作者
     function removeCreator(address creator) external onlyOwner {
         require(isCreator[creator], "Address is not a creator");
         isCreator[creator] = false;
 
-        // 从数组中移除
+        // Remove from array / 从数组中移除
         for (uint256 i = 0; i < creators.length; i++) {
             if (creators[i] == creator) {
                 creators[i] = creators[creators.length - 1];
@@ -418,12 +440,12 @@ contract MonthlyDataUploader is Ownable {
         }
     }
 
-    // 移除投资者
+    // Remove investor / 移除投资者
     function removeInvestor(address investor) external onlyOwner {
         require(isInvestor[investor], "Address is not an investor");
         isInvestor[investor] = false;
 
-        // 从数组中移除
+        // Remove from array / 从数组中移除
         for (uint256 i = 0; i < investors.length; i++) {
             if (investors[i] == investor) {
                 investors[i] = investors[investors.length - 1];
@@ -431,5 +453,90 @@ contract MonthlyDataUploader is Ownable {
                 break;
             }
         }
+    }
+
+    // ========== Token Tracking Functions (moved from MangaNFT) / NFT追踪函数（从MangaNFT迁移） ==========
+
+    // Update ownership tracking / 更新所有权追踪
+    function updateOwnership(uint256 tokenId, address owner) external {
+        require(msg.sender == address(mangaNFTContract), "Only MangaNFT can call");
+        if (!tokenOwnerExists[tokenId][owner]) {
+            tokenOwnerExists[tokenId][owner] = true;
+            tokenOwnersList[tokenId].push(owner);
+        }
+    }
+
+    // Add creator chapter / 添加创作者章节
+    function addCreatorChapter(address creator, uint256 tokenId) external {
+        require(msg.sender == address(mangaNFTContract), "Only MangaNFT can call");
+        creatorChapters[creator].push(tokenId);
+    }
+
+    // Add investor held token / 添加投资者持有的代币
+    function addInvestorHeld(address investor, uint256 tokenId) external {
+        require(msg.sender == address(mangaNFTContract), "Only MangaNFT can call");
+        investorHeld[investor].push(tokenId);
+    }
+
+    // Get token owners / 获取代币所有者
+    function getTokenOwners(uint256 tokenId) external view returns (address[] memory) {
+        return tokenOwnersList[tokenId];
+    }
+
+    // Enhanced: Get current held NFT count by creator / 增强：获取创作者当前持有的NFT数量
+    function getCurrentHeldNFTCountByCreator(address creator) internal view returns (uint256 total) {
+        // Method 1: Check all tracked chapters for this creator / 方法1：检查此创作者的所有追踪章节
+        uint256[] memory chapters = creatorChapters[creator];
+        for (uint256 i = 0; i < chapters.length; i++) {
+            uint256 tokenId = chapters[i];
+            uint256 balance = mangaNFTContract.balanceOf(creator, tokenId);
+            if (balance > 0) {
+                total += balance;
+            }
+        }
+        
+        return total;
+    }
+
+    // Enhanced: Get current held NFT count by investor / 增强：获取投资者当前持有的NFT数量
+    function getCurrentHeldNFTCountByInvestor(address investor) internal view returns (uint256 total) {
+        // Method 1: Check all tracked tokens for this investor / 方法1：检查此投资者的所有追踪代币
+        uint256[] memory chapters = investorHeld[investor];
+        for (uint256 i = 0; i < chapters.length; i++) {
+            uint256 tokenId = chapters[i];
+            uint256 balance = mangaNFTContract.balanceOf(investor, tokenId);
+            if (balance > 0) {
+                total += balance;
+            }
+        }
+        
+        return total;
+    }
+
+    // Get NFT owners with balance / 获取NFT所有者及其余额
+    function getNFTOwnersWithBalance(uint256 tokenId) external view returns (NFTOwner[] memory) {
+        address[] memory owners = tokenOwnersList[tokenId];
+        NFTOwner[] memory results = new NFTOwner[](owners.length);
+
+        for (uint256 i = 0; i < owners.length; i++) {
+            results[i] = NFTOwner({owner: owners[i], balance: mangaNFTContract.balanceOf(owners[i], tokenId)});
+        }
+
+        return results;
+    }
+
+    // External wrapper functions for MangaNFT to call / MangaNFT调用的外部包装函数
+    function getCurrentHeldNFTCountByCreatorExternal(address creator) external view returns (uint256) {
+        return getCurrentHeldNFTCountByCreator(creator);
+    }
+
+    function getCurrentHeldNFTCountByInvestorExternal(address investor) external view returns (uint256) {
+        return getCurrentHeldNFTCountByInvestor(investor);
+    }
+
+    // Update mangaNFT contract address / 更新MangaNFT合约地址
+    function updateMangaNFTContract(address newMangaNFTContract) external onlyOwner {
+        require(newMangaNFTContract != address(0), "Invalid MangaNFT contract address");
+        mangaNFTContract = IERC1155(newMangaNFTContract);
     }
 }
